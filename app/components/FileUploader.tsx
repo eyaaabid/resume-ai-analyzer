@@ -10,7 +10,10 @@ const FileUploader = () => {
     <div className='w-full gradient-border'>
          <div {...getRootProps()}>
       <input {...getInputProps()} />
-      {isDragActive ? <p>Drop the files here ...</p> : <p>Drag 'n' drop some files here, or click to select files</p>}
+      <div className="space-y-4 cursor-pointer">
+        <img src="/icons/info.svg" alt="upload" className="size-20"/>
+
+      </div>
     </div>
     </div>
   )
