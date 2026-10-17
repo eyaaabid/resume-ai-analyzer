@@ -13,9 +13,12 @@ const FileUploader = () => {
       <div className="space-y-4 cursor-pointer">
         <div className="mx-autp w-16 h-16 flex items-center justify-center">
         <img src="/icons/info.svg" alt="upload" className="size-20"/>
-
-
-        </div>
+        </div> 
+        {file ? (
+     <div></div>
+   ):(
+     <div></div>
+   )}
 
       </div>
     </div>
