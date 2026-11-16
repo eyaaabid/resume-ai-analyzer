@@ -11,6 +11,7 @@ const Upload = () => {
     const { auth, isLoading, fs, ai, kv } = usePuterStore();
     const navigate = useNavigate();
     const [isProcessing, setIsProcessing] = useState(false);
+    const [hasError, setHasError] = useState(false);
     const [statusText, setStatusText] = useState('');
     const [file, setFile] = useState<File | null>(null);
 
@@ -18,49 +19,66 @@ const Upload = () => {
         setFile(file)
     }
 
+    // Shows an error message and returns the user to the form
+    const fail = (message: string) => {
+        setHasError(true);
+        setStatusText(message);
+    }
+
     const handleAnalyze = async ({ companyName, jobTitle, jobDescription, file }: { companyName: string, jobTitle: string, jobDescription: string, file: File  }) => {
+        setHasError(false);
         setIsProcessing(true);
 
-        setStatusText('Uploading the file...');
-        const uploadedFile = await fs.upload([file]);
-        if(!uploadedFile) return setStatusText('Error: Failed to upload file');
+        try {
+            setStatusText('Uploading the file...');
+            const uploadedFile = await fs.upload([file]);
+            if(!uploadedFile) return fail('Error: Failed to upload file (is your Puter storage full?)');
 
-        setStatusText('Converting to image...');
-        const imageFile = await convertPdfToImage(file);
-        if(!imageFile.file) return setStatusText('Error: Failed to convert PDF to image');
+            setStatusText('Converting to image...');
+            const imageFile = await convertPdfToImage(file);
+            if(!imageFile.file) return fail(`Error: ${imageFile.error ?? 'Failed to convert PDF to image'}`);
 
-        setStatusText('Uploading the image...');
-        const uploadedImage = await fs.upload([imageFile.file]);
-        if(!uploadedImage) return setStatusText('Error: Failed to upload image');
+            setStatusText('Uploading the image...');
+            const uploadedImage = await fs.upload([imageFile.file]);
+            if(!uploadedImage) return fail('Error: Failed to upload image (is your Puter storage full?)');
 
-        setStatusText('Preparing data...');
-        const uuid = generateUUID();
-        const data = {
-            id: uuid,
-            resumePath: uploadedFile.path,
-            imagePath: uploadedImage.path,
-            companyName, jobTitle, jobDescription,
-            feedback: '',
+            setStatusText('Preparing data...');
+            const uuid = generateUUID();
+            const data = {
+                id: uuid,
+                resumePath: uploadedFile.path,
+                imagePath: uploadedImage.path,
+                companyName, jobTitle, jobDescription,
+                feedback: '' as any,
+            }
+            await kv.set(`resume:${uuid}`, JSON.stringify(data));
+
+            setStatusText('Analyzing...');
+
+            const feedback = await ai.feedback(
+                uploadedFile.path,
+                prepareInstructions({ jobTitle, jobDescription })
+            )
+            if (!feedback) return fail('Error: Failed to analyze resume');
+
+            const feedbackText = typeof feedback.message.content === 'string'
+                ? feedback.message.content
+                : feedback.message.content[0].text;
+
+            // Models sometimes wrap JSON in ```json fences, so strip them before parsing
+            data.feedback = JSON.parse(
+                feedbackText.replace(/```json|```/g, '').trim()
+            );
+            await kv.set(`resume:${uuid}`, JSON.stringify(data));
+            setStatusText('Analysis complete, redirecting...');
+            console.log(data);
+            navigate(`/resume/${uuid}`);
+        } catch (err: any) {
+            console.error('Analyze failed:', err);
+            const message =
+                err?.error?.message ?? err?.message ?? 'Something went wrong during analysis';
+            fail(`Error: ${message}`);
         }
-        await kv.set(`resume:${uuid}`, JSON.stringify(data));
-
-        setStatusText('Analyzing...');
-
-        const feedback = await ai.feedback(
-            uploadedFile.path,
-            prepareInstructions({ jobTitle, jobDescription })
-        )
-        if (!feedback) return setStatusText('Error: Failed to analyze resume');
-
-        const feedbackText = typeof feedback.message.content === 'string'
-            ? feedback.message.content
-            : feedback.message.content[0].text;
-
-        data.feedback = JSON.parse(feedbackText);
-        await kv.set(`resume:${uuid}`, JSON.stringify(data));
-        setStatusText('Analysis complete, redirecting...');
-        console.log(data);
-        navigate(`/resume/${uuid}`);
     }
 
     const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
@@ -88,7 +106,16 @@ const Upload = () => {
                     {isProcessing ? (
                         <>
                             <h2>{statusText}</h2>
-                            <img src="/images/resume-scan.gif" className="w-full" />
+                            {hasError ? (
+                                <button
+                                    className="primary-button w-fit mx-auto mt-6"
+                                    onClick={() => { setIsProcessing(false); setHasError(false); setStatusText(''); }}
+                                >
+                                    Try again
+                                </button>
+                            ) : (
+                                <img src="/images/resume-scan.gif" className="w-full" />
+                            )}
                         </>
                     ) : (
                         <h2>Drop your resume for an ATS score and improvement tips</h2>

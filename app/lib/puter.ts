@@ -1,5 +1,8 @@
 import { create } from "zustand";
 
+// Model ID confirmed valid via puter.ai.listModels(). Change here if needed.
+const FEEDBACK_MODEL = "claude-sonnet-5-5";
+
 declare global {
   interface Window {
     puter: {
@@ -334,24 +337,32 @@ export const usePuterStore = create<PuterStore>((set, get) => {
       return;
     }
 
-    return puter.ai.chat(
-      [
-        {
-          role: "user",
-          content: [
-            {
-              type: "file",
-              puter_path: path,
-            },
-            {
-              type: "text",
-              text: message,
-            },
-          ],
-        },
-      ],
-      { model: "claude-sonnet-4" }
-    ) as Promise<AIResponse | undefined>;
+    try {
+      return (await puter.ai.chat(
+        [
+          {
+            role: "user",
+            content: [
+              {
+                type: "file",
+                puter_path: path,
+              },
+              {
+                type: "text",
+                text: message,
+              },
+            ],
+          },
+        ],
+        { model: FEEDBACK_MODEL }
+      )) as AIResponse | undefined;
+    } catch (err: any) {
+      // Puter throws plain objects (not Error instances), so unwrap the message
+      console.error("AI feedback failed:", err);
+      throw new Error(
+        err?.error?.message ?? err?.message ?? "AI request failed"
+      );
+    }
   };
 
   const img2txt = async (image: string | File | Blob, testMode?: boolean) => {
